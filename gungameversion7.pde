@@ -8,28 +8,28 @@
 // ARDUINO CONTROLLER SETUP (5-PIN JOYSTICK):
 // Each controller needs:
 // - 1x Analog Joystick (5-pin: VCC, GND, X, Y, SW)
-// - 1x Push Button (Reload)
+// - 1x Push Button (Fire)
 //
-// The 5-pin joystick has a built-in button (SW) - press down on the stick to FIRE!
+// The 5-pin joystick has a built-in button (SW) - press down on the stick to RELOAD!
 //
 // Arduino Sketch Example:
 // -------------------------
 // const int JOY_X = A0;        // X-axis
 // const int JOY_Y = A1;        // Y-axis
-// const int JOY_SW = 2;        // Joystick button (press down to fire)
-// const int BTN_RELOAD = 3;    // External reload button
+// const int JOY_SW = 2;        // Joystick button (press down to reload)
+// const int BTN_FIRE = 3;      // External fire button
 //
 // void setup() {
 //   Serial.begin(9600);
-//   pinMode(JOY_SW, INPUT_PULLUP);      // Joystick button
-//   pinMode(BTN_RELOAD, INPUT_PULLUP);  // Reload button
+//   pinMode(JOY_SW, INPUT_PULLUP);    // Joystick button
+//   pinMode(BTN_FIRE, INPUT_PULLUP);  // Fire button
 // }
 //
 // void loop() {
 //   int joyX = analogRead(JOY_X);
 //   int joyY = analogRead(JOY_Y);
-//   int fire = !digitalRead(JOY_SW);       // Press joystick down to fire
-//   int reload = !digitalRead(BTN_RELOAD); // External button
+//   int reload = !digitalRead(JOY_SW);     // Press joystick down to reload
+//   int fire = !digitalRead(BTN_FIRE);     // External button to fire
 //
 //   // Send data in format: "joyX,joyY,fire,reload"
 //   Serial.print(joyX);
@@ -55,9 +55,10 @@ boolean useController = false; // true = controller, false = keyboard
 boolean showInputSelect = false; // Show input selection menu
 
 // Controller data storage
-// Format from Arduino: "P1,joyX,joyY,fireBtn,reloadBtn|P2,joyX,joyY,fireBtn,reloadBtn"
+// Format from Arduino: "joyX,joyY,fireBtn,reloadBtn"
+// fireBtn = external button, reloadBtn = joystick button press
 int p1JoyX = 512, p1JoyY = 512; // Center position (0-1023 range)
-boolean p1FireBtn = false, p1ReloadBtn = false;
+boolean p1FireBtn = false, p1ReloadBtn = false; // Fire = external button, Reload = joystick button
 int p2JoyX = 512, p2JoyY = 512;
 boolean p2FireBtn = false, p2ReloadBtn = false;
 
@@ -540,12 +541,10 @@ void draw() {
       if (joyLeft && !p1PrevJoyLeft) {
         currentMapIndex = (currentMapIndex - 1 + numMaps) % numMaps;
         selectMap(currentMapIndex);
-        if (soundsLoaded && rifleSound != null) rifleSound.play();
       }
       if (joyRight && !p1PrevJoyRight) {
         currentMapIndex = (currentMapIndex + 1) % numMaps;
         selectMap(currentMapIndex);
-        if (soundsLoaded && rifleSound != null) rifleSound.play();
       }
 
       // Fire button to confirm selection
@@ -573,11 +572,9 @@ void draw() {
 
       if (joyLeft && !p1PrevJoyLeft) {
         killsToWin = max(1, killsToWin - 1);
-        if (soundsLoaded && rifleSound != null) rifleSound.play();
       }
       if (joyRight && !p1PrevJoyRight) {
         killsToWin = min(20, killsToWin + 1);
-        if (soundsLoaded && rifleSound != null) rifleSound.play();
       }
 
       // Fire button to start game
@@ -1454,7 +1451,7 @@ void serialEvent(Serial port) {
 
 void parseControllerData(String data, Serial port) {
   // Expected format: "joyX,joyY,fireBtn,reloadBtn"
-  // Example: "512,480,0,1" means joystick at (512, 480), fire not pressed, reload pressed
+  // Example: "512,480,1,0" means joystick at (512, 480), fire pressed (external button), reload not pressed (joystick button)
 
   String[] values = split(data, ',');
   if (values.length != 4) return;
