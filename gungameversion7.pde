@@ -66,6 +66,11 @@ int joyDeadZone = 50;
 // Joystick center position
 int joyCenterX = 512, joyCenterY = 512;
 
+// Menu navigation controller state tracking
+boolean p1PrevFireBtn = false;
+boolean p1PrevJoyLeft = false;
+boolean p1PrevJoyRight = false;
+
 // Sound effects
 SoundFile shootSound;
 SoundFile player1HitSound1;
@@ -507,21 +512,103 @@ void draw() {
 
   if (showInputSelect) {
     drawInputSelectScreen();
+    // Controller input for input selection (only if controllers are connected)
+    if (port1 != null) {
+      // Update controller data
+      // Fire button selects controller mode
+      if (p1FireBtn && !p1PrevFireBtn) {
+        useController = true;
+        initializeControllers();
+        showInputSelect = false;
+        showMapSelect = true;
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+      p1PrevFireBtn = p1FireBtn;
+    }
     return;
   }
 
   if (showMapSelect) {
     drawMapSelectScreen();
+    // Controller input for map selection
+    if (useController && port1 != null) {
+      // Joystick left/right to navigate maps
+      int deltaX = p1JoyX - joyCenterX;
+      boolean joyLeft = deltaX < -joyDeadZone;
+      boolean joyRight = deltaX > joyDeadZone;
+
+      if (joyLeft && !p1PrevJoyLeft) {
+        currentMapIndex = (currentMapIndex - 1 + numMaps) % numMaps;
+        selectMap(currentMapIndex);
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+      if (joyRight && !p1PrevJoyRight) {
+        currentMapIndex = (currentMapIndex + 1) % numMaps;
+        selectMap(currentMapIndex);
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+
+      // Fire button to confirm selection
+      if (p1FireBtn && !p1PrevFireBtn) {
+        showMapSelect = false;
+        showKillSelect = true;
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+
+      p1PrevJoyLeft = joyLeft;
+      p1PrevJoyRight = joyRight;
+      p1PrevFireBtn = p1FireBtn;
+    }
     return;
   }
   
   if (showKillSelect) {
     drawKillSelectScreen();
+    // Controller input for kill selection
+    if (useController && port1 != null) {
+      // Joystick left/right to adjust kill count
+      int deltaX = p1JoyX - joyCenterX;
+      boolean joyLeft = deltaX < -joyDeadZone;
+      boolean joyRight = deltaX > joyDeadZone;
+
+      if (joyLeft && !p1PrevJoyLeft) {
+        killsToWin = max(1, killsToWin - 1);
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+      if (joyRight && !p1PrevJoyRight) {
+        killsToWin = min(20, killsToWin + 1);
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+
+      // Fire button to start game
+      if (p1FireBtn && !p1PrevFireBtn) {
+        showKillSelect = false;
+        gameTrackStarted = false;
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+
+      p1PrevJoyLeft = joyLeft;
+      p1PrevJoyRight = joyRight;
+      p1PrevFireBtn = p1FireBtn;
+    }
     return;
   }
   
   if (gameEnded) {
     drawEndScreen();
+    // Controller input for end screen restart
+    if (useController && port1 != null) {
+      int timeSinceEnd = millis() - endScreenStartTime;
+      int gunfireTime = 4000 + gunfireDelay;
+      int restartAvailableTime = gunfireTime + 3000;
+      if (timeSinceEnd >= restartAvailableTime) {
+        // Fire button to restart
+        if (p1FireBtn && !p1PrevFireBtn) {
+          resetGame();
+        }
+        p1PrevFireBtn = p1FireBtn;
+      }
+    }
     return;
   }
   
@@ -1457,6 +1544,83 @@ void updatePlayerFromController(Player p, int joyX, int joyY, boolean fireBtn, b
   } else if (!reloadBtn) {
     p.reloadBtnPressed = false;
   }
+}
+
+void resetGame() {
+  // Reset game state
+  gameEnded = false;
+  winner = null;
+  gameStarted = false;
+  showInputSelect = false;
+  showMapSelect = false;
+  showKillSelect = false;
+  gameTrackStarted = false;
+  gunfireDelay = 0;
+
+  // Reset player 1
+  player1.kills = 0;
+  player1.health = 100;
+  player1.x = 75;
+  player1.y = 75;
+  player1.angle = 0;
+  player1.currentWeapon = "pistol";
+  player1.weaponAmmo = 0;
+  player1.lastHitMarker = 0;
+  player1.pistolAmmo = player1.pistolMaxAmmo;
+  player1.reloading = false;
+  player1.fireKeyHeld = false;
+  player1.reloadBtnPressed = false;
+  player1.wKey = false;
+  player1.aKey = false;
+  player1.sKey = false;
+  player1.dKey = false;
+
+  // Reset player 2
+  player2.kills = 0;
+  player2.health = 100;
+  player2.x = 725;
+  player2.y = 725;
+  player2.angle = PI;
+  player2.currentWeapon = "pistol";
+  player2.weaponAmmo = 0;
+  player2.lastHitMarker = 0;
+  player2.pistolAmmo = player2.pistolMaxAmmo;
+  player2.reloading = false;
+  player2.fireKeyHeld = false;
+  player2.reloadBtnPressed = false;
+  player2.wKey = false;
+  player2.aKey = false;
+  player2.sKey = false;
+  player2.dKey = false;
+
+  // Reset controller button states
+  p1FireBtn = false;
+  p1ReloadBtn = false;
+  p2FireBtn = false;
+  p2ReloadBtn = false;
+  p1PrevFireBtn = false;
+  p1PrevJoyLeft = false;
+  p1PrevJoyRight = false;
+
+  // Reset atomic bomb state (desert map)
+  atomicBombTriggered = false;
+  atomicBombDetonated = false;
+  atomicBombFlashAlpha = 0;
+  atomicBombTriggerTime = 0;
+
+  // Reset skybox to normal for desert map
+  if (currentMapIndex == 3) {
+    skyboxTexture = skyboxTextureDesert;
+  }
+
+  // Clear game objects
+  bullets.clear();
+  weaponPickups.clear();
+  healthKits.clear();
+  bloodParticles.clear();
+  bloodPools.clear();
+  nextWeaponSpawn = millis() + 10000;
+  nextHealthKitSpawn = millis() + 15000;
 }
 
 void loadTextures() {
@@ -4224,53 +4388,7 @@ void keyPressed() {
     int gunfireTime = 4000 + gunfireDelay;
     int restartAvailableTime = gunfireTime + 3000;
     if (timeSinceEnd >= restartAvailableTime) {
-      gameEnded = false;
-      winner = null;
-      gameStarted = false;
-      showInputSelect = false;
-      showMapSelect = false;
-      showKillSelect = false;
-      gameTrackStarted = false;
-      gunfireDelay = 0;
-      player1.kills = 0;
-      player1.health = 100;
-      player1.x = 75;
-      player1.y = 75;
-      player1.angle = 0;
-      player1.currentWeapon = "pistol";
-      player1.weaponAmmo = 0;
-      player1.lastHitMarker = 0;
-      player1.pistolAmmo = player1.pistolMaxAmmo;
-      player1.reloading = false;
-      player2.kills = 0;
-      player2.health = 100;
-      player2.x = 725;
-      player2.y = 725;
-      player2.angle = PI;
-      player2.currentWeapon = "pistol";
-      player2.weaponAmmo = 0;
-      player2.lastHitMarker = 0;
-      player2.pistolAmmo = player2.pistolMaxAmmo;
-      player2.reloading = false;
-
-      // Reset atomic bomb state (desert map)
-      atomicBombTriggered = false;
-      atomicBombDetonated = false;
-      atomicBombFlashAlpha = 0;
-      atomicBombTriggerTime = 0;
-
-      // Reset skybox to normal for desert map
-      if (currentMapIndex == 3) {
-        skyboxTexture = skyboxTextureDesert;
-      }
-
-      bullets.clear();
-      weaponPickups.clear();
-      healthKits.clear();
-      bloodParticles.clear();
-      bloodPools.clear();
-      nextWeaponSpawn = millis() + 10000;
-      nextHealthKitSpawn = millis() + 15000;
+      resetGame();
     }
     return;
   }
