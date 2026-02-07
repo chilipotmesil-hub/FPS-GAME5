@@ -8,28 +8,28 @@
 // ARDUINO CONTROLLER SETUP (5-PIN JOYSTICK):
 // Each controller needs:
 // - 1x Analog Joystick (5-pin: VCC, GND, X, Y, SW)
-// - 1x Push Button (Reload)
+// - 1x Push Button (Fire)
 //
-// The 5-pin joystick has a built-in button (SW) - press down on the stick to FIRE!
+// The 5-pin joystick has a built-in button (SW) - press down on the stick to RELOAD!
 //
 // Arduino Sketch Example:
 // -------------------------
 // const int JOY_X = A0;        // X-axis
 // const int JOY_Y = A1;        // Y-axis
-// const int JOY_SW = 2;        // Joystick button (press down to fire)
-// const int BTN_RELOAD = 3;    // External reload button
+// const int JOY_SW = 2;        // Joystick button (press down to reload)
+// const int BTN_FIRE = 3;      // External fire button
 //
 // void setup() {
 //   Serial.begin(9600);
-//   pinMode(JOY_SW, INPUT_PULLUP);      // Joystick button
-//   pinMode(BTN_RELOAD, INPUT_PULLUP);  // Reload button
+//   pinMode(JOY_SW, INPUT_PULLUP);    // Joystick button
+//   pinMode(BTN_FIRE, INPUT_PULLUP);  // Fire button
 // }
 //
 // void loop() {
 //   int joyX = analogRead(JOY_X);
 //   int joyY = analogRead(JOY_Y);
-//   int fire = !digitalRead(JOY_SW);       // Press joystick down to fire
-//   int reload = !digitalRead(BTN_RELOAD); // External button
+//   int reload = !digitalRead(JOY_SW);     // Press joystick down to reload
+//   int fire = !digitalRead(BTN_FIRE);     // External button to fire
 //
 //   // Send data in format: "joyX,joyY,fire,reload"
 //   Serial.print(joyX);
@@ -55,9 +55,10 @@ boolean useController = false; // true = controller, false = keyboard
 boolean showInputSelect = false; // Show input selection menu
 
 // Controller data storage
-// Format from Arduino: "P1,joyX,joyY,fireBtn,reloadBtn|P2,joyX,joyY,fireBtn,reloadBtn"
+// Format from Arduino: "joyX,joyY,fireBtn,reloadBtn"
+// fireBtn = external button, reloadBtn = joystick button press
 int p1JoyX = 512, p1JoyY = 512; // Center position (0-1023 range)
-boolean p1FireBtn = false, p1ReloadBtn = false;
+boolean p1FireBtn = false, p1ReloadBtn = false; // Fire = external button, Reload = joystick button
 int p2JoyX = 512, p2JoyY = 512;
 boolean p2FireBtn = false, p2ReloadBtn = false;
 
@@ -65,6 +66,11 @@ boolean p2FireBtn = false, p2ReloadBtn = false;
 int joyDeadZone = 50;
 // Joystick center position
 int joyCenterX = 512, joyCenterY = 512;
+
+// Menu navigation controller state tracking
+boolean p1PrevFireBtn = false;
+boolean p1PrevJoyLeft = false;
+boolean p1PrevJoyRight = false;
 
 // Sound effects
 SoundFile shootSound;
@@ -507,21 +513,99 @@ void draw() {
 
   if (showInputSelect) {
     drawInputSelectScreen();
+    // Controller input for input selection (only if controllers are connected)
+    if (port1 != null) {
+      // Update controller data
+      // Fire button selects controller mode
+      if (p1FireBtn && !p1PrevFireBtn) {
+        useController = true;
+        initializeControllers();
+        showInputSelect = false;
+        showMapSelect = true;
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+      p1PrevFireBtn = p1FireBtn;
+    }
     return;
   }
 
   if (showMapSelect) {
     drawMapSelectScreen();
+    // Controller input for map selection
+    if (useController && port1 != null) {
+      // Joystick left/right to navigate maps
+      int deltaX = p1JoyX - joyCenterX;
+      boolean joyLeft = deltaX < -joyDeadZone;
+      boolean joyRight = deltaX > joyDeadZone;
+
+      if (joyLeft && !p1PrevJoyLeft) {
+        currentMapIndex = (currentMapIndex - 1 + numMaps) % numMaps;
+        selectMap(currentMapIndex);
+      }
+      if (joyRight && !p1PrevJoyRight) {
+        currentMapIndex = (currentMapIndex + 1) % numMaps;
+        selectMap(currentMapIndex);
+      }
+
+      // Fire button to confirm selection
+      if (p1FireBtn && !p1PrevFireBtn) {
+        showMapSelect = false;
+        showKillSelect = true;
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+
+      p1PrevJoyLeft = joyLeft;
+      p1PrevJoyRight = joyRight;
+      p1PrevFireBtn = p1FireBtn;
+    }
     return;
   }
   
   if (showKillSelect) {
     drawKillSelectScreen();
+    // Controller input for kill selection
+    if (useController && port1 != null) {
+      // Joystick left/right to adjust kill count
+      int deltaX = p1JoyX - joyCenterX;
+      boolean joyLeft = deltaX < -joyDeadZone;
+      boolean joyRight = deltaX > joyDeadZone;
+
+      if (joyLeft && !p1PrevJoyLeft) {
+        killsToWin = max(1, killsToWin - 1);
+      }
+      if (joyRight && !p1PrevJoyRight) {
+        killsToWin = min(20, killsToWin + 1);
+      }
+
+      // Fire button to start game
+      if (p1FireBtn && !p1PrevFireBtn) {
+        showKillSelect = false;
+        gameTrackStarted = false;
+        if (soundsLoaded && rifleSound != null) rifleSound.play();
+      }
+
+      p1PrevJoyLeft = joyLeft;
+      p1PrevJoyRight = joyRight;
+      p1PrevFireBtn = p1FireBtn;
+    }
     return;
   }
   
   if (gameEnded) {
     drawEndScreen();
+    // Controller input for end screen restart
+    if (useController && port1 != null) {
+      int timeSinceEnd = millis() - endScreenStartTime;
+      int gunfireTime = 4000 + gunfireDelay;
+      int restartAvailableTime = gunfireTime + 3000;
+      if (timeSinceEnd >= restartAvailableTime) {
+        // Fire button to restart
+        if (p1FireBtn && !p1PrevFireBtn) {
+          resetGame();
+        }
+        p1PrevFireBtn = p1FireBtn;
+      }
+    }
     return;
   }
   
@@ -1367,7 +1451,7 @@ void serialEvent(Serial port) {
 
 void parseControllerData(String data, Serial port) {
   // Expected format: "joyX,joyY,fireBtn,reloadBtn"
-  // Example: "512,480,0,1" means joystick at (512, 480), fire not pressed, reload pressed
+  // Example: "512,480,1,0" means joystick at (512, 480), fire pressed (external button), reload not pressed (joystick button)
 
   String[] values = split(data, ',');
   if (values.length != 4) return;
@@ -1457,6 +1541,83 @@ void updatePlayerFromController(Player p, int joyX, int joyY, boolean fireBtn, b
   } else if (!reloadBtn) {
     p.reloadBtnPressed = false;
   }
+}
+
+void resetGame() {
+  // Reset game state
+  gameEnded = false;
+  winner = null;
+  gameStarted = false;
+  showInputSelect = false;
+  showMapSelect = false;
+  showKillSelect = false;
+  gameTrackStarted = false;
+  gunfireDelay = 0;
+
+  // Reset player 1
+  player1.kills = 0;
+  player1.health = 100;
+  player1.x = 75;
+  player1.y = 75;
+  player1.angle = 0;
+  player1.currentWeapon = "pistol";
+  player1.weaponAmmo = 0;
+  player1.lastHitMarker = 0;
+  player1.pistolAmmo = player1.pistolMaxAmmo;
+  player1.reloading = false;
+  player1.fireKeyHeld = false;
+  player1.reloadBtnPressed = false;
+  player1.wKey = false;
+  player1.aKey = false;
+  player1.sKey = false;
+  player1.dKey = false;
+
+  // Reset player 2
+  player2.kills = 0;
+  player2.health = 100;
+  player2.x = 725;
+  player2.y = 725;
+  player2.angle = PI;
+  player2.currentWeapon = "pistol";
+  player2.weaponAmmo = 0;
+  player2.lastHitMarker = 0;
+  player2.pistolAmmo = player2.pistolMaxAmmo;
+  player2.reloading = false;
+  player2.fireKeyHeld = false;
+  player2.reloadBtnPressed = false;
+  player2.wKey = false;
+  player2.aKey = false;
+  player2.sKey = false;
+  player2.dKey = false;
+
+  // Reset controller button states
+  p1FireBtn = false;
+  p1ReloadBtn = false;
+  p2FireBtn = false;
+  p2ReloadBtn = false;
+  p1PrevFireBtn = false;
+  p1PrevJoyLeft = false;
+  p1PrevJoyRight = false;
+
+  // Reset atomic bomb state (desert map)
+  atomicBombTriggered = false;
+  atomicBombDetonated = false;
+  atomicBombFlashAlpha = 0;
+  atomicBombTriggerTime = 0;
+
+  // Reset skybox to normal for desert map
+  if (currentMapIndex == 3) {
+    skyboxTexture = skyboxTextureDesert;
+  }
+
+  // Clear game objects
+  bullets.clear();
+  weaponPickups.clear();
+  healthKits.clear();
+  bloodParticles.clear();
+  bloodPools.clear();
+  nextWeaponSpawn = millis() + 10000;
+  nextHealthKitSpawn = millis() + 15000;
 }
 
 void loadTextures() {
@@ -4224,53 +4385,7 @@ void keyPressed() {
     int gunfireTime = 4000 + gunfireDelay;
     int restartAvailableTime = gunfireTime + 3000;
     if (timeSinceEnd >= restartAvailableTime) {
-      gameEnded = false;
-      winner = null;
-      gameStarted = false;
-      showInputSelect = false;
-      showMapSelect = false;
-      showKillSelect = false;
-      gameTrackStarted = false;
-      gunfireDelay = 0;
-      player1.kills = 0;
-      player1.health = 100;
-      player1.x = 75;
-      player1.y = 75;
-      player1.angle = 0;
-      player1.currentWeapon = "pistol";
-      player1.weaponAmmo = 0;
-      player1.lastHitMarker = 0;
-      player1.pistolAmmo = player1.pistolMaxAmmo;
-      player1.reloading = false;
-      player2.kills = 0;
-      player2.health = 100;
-      player2.x = 725;
-      player2.y = 725;
-      player2.angle = PI;
-      player2.currentWeapon = "pistol";
-      player2.weaponAmmo = 0;
-      player2.lastHitMarker = 0;
-      player2.pistolAmmo = player2.pistolMaxAmmo;
-      player2.reloading = false;
-
-      // Reset atomic bomb state (desert map)
-      atomicBombTriggered = false;
-      atomicBombDetonated = false;
-      atomicBombFlashAlpha = 0;
-      atomicBombTriggerTime = 0;
-
-      // Reset skybox to normal for desert map
-      if (currentMapIndex == 3) {
-        skyboxTexture = skyboxTextureDesert;
-      }
-
-      bullets.clear();
-      weaponPickups.clear();
-      healthKits.clear();
-      bloodParticles.clear();
-      bloodPools.clear();
-      nextWeaponSpawn = millis() + 10000;
-      nextHealthKitSpawn = millis() + 15000;
+      resetGame();
     }
     return;
   }
